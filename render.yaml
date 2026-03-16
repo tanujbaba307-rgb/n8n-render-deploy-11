@@ -18,7 +18,7 @@ services:
       - key: N8N_ENCRYPTION_KEY
         generateValue: true
       - key: N8N_USER_FOLDER
-        value: /opt/render/.n8n
+        value: /tmp/n8n
       - key: N8N_BASIC_AUTH_ACTIVE
         value: "true"
       - key: WEBHOOK_URL
@@ -26,7 +26,3 @@ services:
           type: web
           name: n8n-ai-agent
           envVarKey: RENDER_EXTERNAL_URL
-    disks:
-      - name: n8n-data
-        mountPath: /opt/render/.n8n
-        sizeGB: 1
