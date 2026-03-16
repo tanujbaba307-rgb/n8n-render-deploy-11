@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: n8n-ai-agent
+    env: docker
+    repo: https://github.com/tanujbaba307-rgb/n8n-render-deploy-11
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: N8N_HOST
+        value: 0.0.0.0
+      - key: N8N_PORT
+        value: 10000
+      - key: N8N_PROTOCOL
+        value: https
+      - key: NODE_ENV
+        value: production
+      - key: N8N_ENCRYPTION_KEY
+        generateValue: true
+      - key: N8N_USER_FOLDER
+        value: /opt/render/.n8n
+      - key: N8N_BASIC_AUTH_ACTIVE
+        value: "true"
+      - key: WEBHOOK_URL
+        fromService:
+          type: web
+          name: n8n-ai-agent
+          envVarKey: RENDER_EXTERNAL_URL
+    disks:
+      - name: n8n-data
+        mountPath: /opt/render/.n8n
+        sizeGB: 1
