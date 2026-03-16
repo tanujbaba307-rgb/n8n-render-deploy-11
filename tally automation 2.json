@@ -1,0 +1,907 @@
+{
+  "name": "tally automation 2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tally-ai",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2272,
+        -656
+      ],
+      "id": "6dd7f201-f277-4ea7-9aa6-37d9a9089d8e",
+      "name": "Webhook",
+      "webhookId": "81b43a2c-3647-4611-bb29-592c72ac5ef6"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      prompt: `\nYou are an intent extractor.\n\nReturn ONLY valid JSON.\nNo explanation.\nNo extra text.\n\nExpected format:\n{\n  \"type\": \"action | question\",\n  \"voucherType\": \"Sales | Purchase | Receipt | Payment | null\",\n  \"amount\": number | null,\n  \"ledger\": string | null,\n  \"gst\": { \"enabled\": boolean, \"rate\": number | null } | null\n}\n\nUser input:\n${$json.text}\n`\n    }\n  }\n];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -960
+      ],
+      "id": "23026986-0acd-4b89-8d7f-7017e48a5cc1",
+      "name": "Build Prompt"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "phi3:mini",
+          "mode": "list",
+          "cachedResultName": "phi3:mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are an API.\n\nReturn ONLY valid JSON.\nDo not include explanations.\nDo not include text outside JSON.\n\nFormat:{{ $('Code in JavaScript2').item.json.question }}\n"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1,
+          "top_p": 1,
+          "num_predict": 80
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        -128,
+        -960
+      ],
+      "id": "dca1f252-80ce-4b68-9403-4be72059a915",
+      "name": "Message a model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "ZPGa55MVWXaydb1L",
+          "name": "Ollama account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.content || \"\";\n\n// extract JSON from text\nlet jsonMatch = raw.match(/\\{[\\s\\S]*\\}/);\n\nif (!jsonMatch) {\n  throw new Error(\"No JSON found in AI response\");\n}\n\nlet aiResponse;\n\ntry {\n  aiResponse = JSON.parse(jsonMatch[0]);\n} catch (e) {\n  throw new Error(\"AI returned invalid JSON\");\n}\n\nconst state = {\n  intent: aiResponse.intent || null,\n  amount: aiResponse.amount || null,\n  newAmount: aiResponse.newAmount || null,\n  voucherType: aiResponse.voucherType || null,\n  hasGST: aiResponse.hasGST ?? null,\n  gstRate: aiResponse.gstRate ?? null,\n  missing: aiResponse.missing || []\n};\n\nif (!state.intent) state.missing.push(\"intent\");\nif (!state.voucherType) state.missing.push(\"voucherType\");\nif (!state.amount) state.missing.push(\"amount\");\n\nreturn [\n  {\n    json: {\n      state\n    }\n  }\n];\n\n\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -960
+      ],
+      "id": "67a5b28c-9410-4b0b-a686-6d76e0019a8c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "// DELETE EVERYTHING AND PASTE THIS\n\nconst state = $json.state;\n\nconst errors = [];\nconst askUser = [];\n\n// example rules\nif (state.hasGST === true && !state.gstRate) {\n  askUser.push(\"gstRate\");\n}\n\nif (state.amount <= 0) {\n  errors.push(\"Amount must be greater than zero\");\n}\n\nif (askUser.length > 0) {\n  return [\n    {\n      json: {\n        status: \"ASK_USER\",\n        askUser\n      }\n    }\n  ];\n}\n\nif (errors.length > 0) {\n  return [\n    {\n      json: {\n        status: \"ERROR\",\n        errors\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      status: \"OK\",\n      state\n    }\n  }\n];\n\n\n\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        -960
+      ],
+      "id": "e396a900-9809-4de4-967a-963868ec1627",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SAFE DEFAULT ROW (temporary, for pipeline test)\nconst row = {\n  date: \"2024-01-15\",\n  ledger: \"Sales\",\n  amount: 2500,\n  type: \"debit\"\n};\n\n// date format: YYYYMMDD\nconst tallyDate = row.date.replaceAll(\"-\", \"\");\n\nconst isDebit = row.type.toLowerCase() === \"debit\";\n\nconst voucher = {\n  TALLYREQUEST: \"Import Data\",\n  REQUESTDATA: {\n    TALLYMESSAGE: {\n      VOUCHER: {\n        DATE: tallyDate,\n        VOUCHERTYPENAME: \"Sales\",\n        PARTYLEDGERNAME: \"Ram & Sons\",\n        ALLLEDGERENTRIES: [\n          {\n            LEDGERNAME: \"Ram & Sons\",\n            ISDEEMEDPOSITIVE: \"Yes\",\n            AMOUNT: -row.amount\n          },\n          {\n            LEDGERNAME: \"Sales\",\n            ISDEEMEDPOSITIVE: \"No\",\n            AMOUNT: row.amount\n          }\n        ]\n      }\n    }\n  }\n};\n\nreturn [{ json: voucher }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -960
+      ],
+      "id": "fcabe4d9-6aef-4030-9450-7578bdcc995e",
+      "name": "tally voucher"
+    },
+    {
+      "parameters": {
+        "jsCode": "// DELETE EVERYTHING AND PASTE THIS\n\nconst ctx = $json.context;\n\n// -------- HARD VALIDATION (NO MERCY) ----------\nif (!ctx) {\n  throw new Error(\"Context missing\");\n}\nif (!ctx.voucherType) {\n  throw new Error(\"Voucher type missing\");\n}\nif (!ctx.amount || Number(ctx.amount) <= 0) {\n  throw new Error(\"Invalid amount\");\n}\nif (!ctx.resolvedLedger) {\n  throw new Error(\"Ledger missing\");\n}\n\n// -------- BASIC VALUES ----------\nconst date = ctx.date || new Date().toISOString().slice(0,10).replace(/-/g,\"\");\nconst amount = Number(ctx.amount);\n\n// -------- LEDGER ENTRIES ----------\nconst entries = `\n<ALLLEDGERENTRIES.LIST>\n  <LEDGERNAME>${ctx.resolvedLedger}</LEDGERNAME>\n  <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>\n  <AMOUNT>-${amount}</AMOUNT>\n</ALLLEDGERENTRIES.LIST>\n\n<ALLLEDGERENTRIES.LIST>\n  <LEDGERNAME>Sales</LEDGERNAME>\n  <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>\n  <AMOUNT>${amount}</AMOUNT>\n</ALLLEDGERENTRIES.LIST>\n`;\n\n// -------- GST (OPTIONAL) ----------\nlet gstBlock = \"\";\nif (ctx.gst && ctx.gst.enabled === true) {\n  gstBlock = `\n<ALLLEDGERENTRIES.LIST>\n  <LEDGERNAME>Output GST</LEDGERNAME>\n  <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>\n  <AMOUNT>${ctx.gst.amount}</AMOUNT>\n</ALLLEDGERENTRIES.LIST>\n`;\n}\n\n// -------- FINAL XML ----------\nconst xml = `\n<ENVELOPE>\n <HEADER>\n  <TALLYREQUEST>Import Data</TALLYREQUEST>\n </HEADER>\n <BODY>\n  <IMPORTDATA>\n   <REQUESTDESC>\n    <REPORTNAME>Vouchers</REPORTNAME>\n   </REQUESTDESC>\n   <REQUESTDATA>\n    <TALLYMESSAGE>\n     <VOUCHER VCHTYPE=\"${ctx.voucherType}\" ACTION=\"Create\">\n      <DATE>${date}</DATE>\n      <VOUCHERTYPENAME>${ctx.voucherType}</VOUCHERTYPENAME>\n      <PARTYLEDGERNAME>${ctx.resolvedLedger}</PARTYLEDGERNAME>\n      ${entries}\n      ${gstBlock}\n     </VOUCHER>\n    </TALLYMESSAGE>\n   </REQUESTDATA>\n  </IMPORTDATA>\n </BODY>\n</ENVELOPE>\n`.trim();\n\nreturn [\n  {\n    json: {\n      xml\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        -960
+      ],
+      "id": "7724f2b8-7687-4aa7-9fc1-57b1178bacc8",
+      "name": "Build Tally XML"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json.context || {};\n\nif (!ctx.voucherType) {\n  return [{\n    json: {\n      type: \"question\",\n      question: \"Voucher type batayiye (Sales / Purchase / Receipt / Payment)\"\n    }\n  }];\n}\n\nctx.voucherRules = {\n  debit: ctx.voucherType !== \"Sales\",\n  credit: ctx.voucherType === \"Sales\"\n};\n\nreturn [{ json: { context: ctx } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        -960
+      ],
+      "id": "de4e9a85-244d-465b-b610-9342c77cbf22",
+      "name": "Voucher Rule Engine"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize Webhook Input\n\nconst body = $json.body || {};\n\nif (!body.instruction || body.instruction.trim() === \"\") {\n  return [{\n    json: {\n      type: \"question\",\n      question: \"Aap kya change karna chahte ho? Kripya instruction likhiye.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    instruction: body.instruction,\n    context: body.context || {}\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -960
+      ],
+      "id": "d1306799-3bc5-4a2e-a0aa-adfb2902561e",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $json.context || {};\n\nconst next = {\n  ...prev,\n  ...$json\n};\n\nreturn [{\n  json: {\n    context: next\n  }\n}];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2048,
+        -656
+      ],
+      "id": "67d6e241-764d-411b-850b-7e40693202ae",
+      "name": "Context Store"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json.context || {};\n\nif (!ctx.ledger) {\n  return [{\n    json: {\n      type: \"question\",\n      question: \"Kaunsa ledger use karna hai? (Cash / Bank / Party name)\"\n    }\n  }];\n}\n\nconst map = {\n  cash: \"Cash\",\n  bank: \"HDFC Bank\"\n};\n\nctx.resolvedLedger =\n  map[ctx.ledger.toLowerCase()] || ctx.ledger;\n\nreturn [{ json: { context: ctx } }];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        -960
+      ],
+      "id": "f0f0e305-7220-4245-aa51-2241c29863e5",
+      "name": "Ledger Resolver"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json.context || {};\n\nif (!ctx.gst || !ctx.gst.enabled) {\n  ctx.gst = { enabled: false, amount: 0 };\n  return [{ json: { context: ctx } }];\n}\n\nconst rate = Number(ctx.gst.rate || 0);\nconst amt = Number(ctx.amount || 0);\n\nctx.gst.amount = (amt * rate) / 100;\nctx.gst.enabled = true;\n\nreturn [{ json: { context: ctx } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        -960
+      ],
+      "id": "8255da23-2138-45e8-8989-3e0a2b9d1248",
+      "name": "GST Rule Engine"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json.context || {};\nconst errors = [];\n\nif (!ctx.amount) errors.push(\"Amount missing\");\nif (!ctx.resolvedLedger) errors.push(\"Ledger missing\");\nif (!ctx.voucherType) errors.push(\"Voucher type missing\");\n\nif (errors.length) {\n  return [{\n    json: {\n      type: \"question\",\n      question: \"Ye details missing hain: \" + errors.join(\", \")\n    }\n  }];\n}\n\nreturn [{ json: { context: ctx } }];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        -960
+      ],
+      "id": "606cdec9-8a21-4de2-8d9b-daa1af0de7e8",
+      "name": "Validation Layer"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.xml}}\n",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": "attachment; filename=\"voucher.xml\""
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1888,
+        -960
+      ],
+      "id": "5f90ba1b-096e-4a4b-a12f-b6a266ebb83b",
+      "name": "Respond to Webhook last"
+    },
+    {
+      "parameters": {
+        "jsCode": "let data;\n\ntry {\n  data = JSON.parse($json.content);\n} catch (e) {\n  return [{\n    json: {\n      type: \"chat\",\n      reply: \"Hello 👋, batao aap kya change karna chahte ho?\"\n    }\n  }];\n}\n\nreturn [{ json: data }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -960
+      ],
+      "id": "6950c57d-85fa-4cd9-9f39-ad0d4e1ec7b8",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawMessage = items[0].json.context?.body?.instruction || \"\";\nconst message = rawMessage.toLowerCase().trim();\n\n// Greeting detection\nconst greetings = [\"hi\", \"hello\", \"hey\", \"good morning\", \"good evening\"];\nconst isGreeting = greetings.includes(message);\n\n// Question detection\nconst questionWords = [\"what\", \"why\", \"how\", \"when\", \"where\", \"which\", \"meaning\"];\nconst isQuestion = questionWords.some(word => message.includes(word));\n\n// Command detection\nconst commandWords = [\n  \"create\",\n  \"make\",\n  \"generate\",\n  \"pass\",\n  \"add\"\n];\n\nconst voucherWords = [\n  \"voucher\",\n  \"sale\",\n  \"sales\",\n  \"purchase\",\n  \"receipt\",\n  \"payment\",\n  \"gst\"\n];\n\nconst hasCommandWord = commandWords.some(word => message.includes(word));\nconst hasVoucherWord = voucherWords.some(word => message.includes(word));\n\nconst isVoucherCommand = hasCommandWord && hasVoucherWord;\n\n// Mixed detection\nconst isMixed = isVoucherCommand && isQuestion;\n\nreturn [\n  {\n    json: {\n      message,\n      isGreeting,\n      isQuestion,\n      isVoucherCommand,\n      isMixed\n    }\n  }\n];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        -672
+      ],
+      "id": "a86428c0-c8eb-415a-b502-9308744ff77d",
+      "name": "Intent Router"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "phi3:mini",
+          "mode": "list",
+          "cachedResultName": "phi3:mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Reply in 1 or 2 short sentences only.\nKeep the answer under 30 words.\n\nUser:\n{{$json.message}}\n\n"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.6,
+          "top_p": 1,
+          "num_predict": 20
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -688
+      ],
+      "id": "cc6ad9c4-84c9-459a-9d16-3a4fc9d5d820",
+      "name": "chat ui",
+      "credentials": {
+        "ollamaApi": {
+          "id": "ZPGa55MVWXaydb1L",
+          "name": "Ollama account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.content}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -48,
+        -688
+      ],
+      "id": "3715880c-c813-4e34-ad0f-11819d05b8d7",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "95f2d849-f490-455b-9d4e-283c6140a21d",
+              "leftValue": "={{ $json.isGreeting }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1648,
+        -688
+      ],
+      "id": "6f4c090f-6ce7-4ab4-a938-b8540cd2a178",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $json.message;\n\nlet reply = \"\";\n\nif (msg.includes(\"how are you\")) {\n  reply = \"I'm good. Tell me what you want to do in Tally.\";\n}\nelse if (msg.includes(\"who are you\")) {\n  reply = \"I am your Tally AI assistant.\";\n}\nelse if (msg.includes(\"help\")) {\n  reply = \"You can ask me to create vouchers or ask Tally related questions.\";\n}\nelse if (msg.includes(\"tally kya hai\")) {\n  reply = \"Tally is accounting software used for bookkeeping, GST, and financial management.\";\n}\nelse if (msg.includes(\"gst rate\")) {\n  reply = \"Common GST rates are 5%, 12%, 18%, and 28%.\";\n}\nelse {\n  reply = \"Hi! Tell me what you want to do.\";\n}\n\nreturn [{\n  reply\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        -640
+      ],
+      "id": "2cbe9ffa-e515-4b8b-a041-76ac47a93cdf",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.reply}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -816,
+        -640
+      ],
+      "id": "a33ebe83-7d29-4a0d-91ff-35cc68d6628d",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5c3be8f0-2e12-4714-a089-dedeba26aef6",
+              "leftValue": "={{ $json.isVoucherCommand }}",
+              "rightValue": "=false",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1104,
+        -944
+      ],
+      "id": "7008b94b-9102-4ad3-9726-22da62883cb3",
+      "name": "if 2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e00a1908-3e50-49c2-86af-f2229dde3413",
+              "leftValue": "={{ $json.isMixed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1232,
+        -2096
+      ],
+      "id": "ceddd509-5ac9-4ce8-bb26-7a0cbc150d6d",
+      "name": "If3",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "phi3:mini",
+          "mode": "list",
+          "cachedResultName": "phi3:mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "User sentence ko analyse karo.\nAgar sentence me:\n1. Informational question hai\n2. Voucher command hai\n\nToh JSON return karo:\n\n{\n  \"hasQuestion\": true/false,\n  \"questionText\": \"...\",\n  \"hasCommand\": true/false,\n  \"commandText\": \"...\"\n}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        -1008,
+        -2464
+      ],
+      "id": "a99fd590-3f4d-48f4-a659-03e43db3b0bc",
+      "name": "Message a model1",
+      "credentials": {
+        "ollamaApi": {
+          "id": "ZPGa55MVWXaydb1L",
+          "name": "Ollama account 2"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -2528
+      ],
+      "id": "58daf50b-a526-442c-a602-50834238228b",
+      "name": "Extract",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        -2192
+      ],
+      "id": "69e425c8-c762-4802-8f4d-f3a7cbc319d8",
+      "name": "Code in JavaScript5",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        -2192
+      ],
+      "id": "b497901a-ae6a-46b4-a161-b910de77a262",
+      "name": "Code in JavaScript6",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "messages": {
+          "values": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        176,
+        -2192
+      ],
+      "id": "9aa2c39f-8863-4323-9a50-5d4eb01053fa",
+      "name": "Message a model2",
+      "credentials": {
+        "ollamaApi": {
+          "id": "ZPGa55MVWXaydb1L",
+          "name": "Ollama account 2"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5c1e0103-f280-42fe-95cb-3ea925f7757e",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -432,
+        -2592
+      ],
+      "id": "bf0533c0-9c0d-4fa3-a362-e6b1db96630e",
+      "name": "If 4"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        528,
+        -2192
+      ],
+      "id": "f4a6e093-accf-4577-a85d-ac8a9731d12d",
+      "name": "Merge",
+      "disabled": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Context Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Ledger Resolver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tally voucher": {
+      "main": [
+        [
+          {
+            "node": "Validation Layer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Tally XML": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook last",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voucher Rule Engine": {
+      "main": [
+        [
+          {
+            "node": "GST Rule Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Context Store": {
+      "main": [
+        [
+          {
+            "node": "Intent Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ledger Resolver": {
+      "main": [
+        [
+          {
+            "node": "Voucher Rule Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GST Rule Engine": {
+      "main": [
+        [
+          {
+            "node": "tally voucher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Layer": {
+      "main": [
+        [
+          {
+            "node": "Build Tally XML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Intent Router": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "chat ui": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "if 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "if 2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "chat ui",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If3": {
+      "main": [
+        [
+          {
+            "node": "Message a model1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Message a model1": {
+      "main": [
+        [
+          {
+            "node": "Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract": {
+      "main": [
+        [
+          {
+            "node": "If 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript6": {
+      "main": [
+        [
+          {
+            "node": "Message a model2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If 4": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "6a27f3d9-8277-428d-ae0e-96de43c83238",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "55bd8d44ac1291dba790093b1655f8c290e89ba536701cb2e9795f4aa3781c64"
+  },
+  "id": "wJBu2GiQ6_IH7IHyHj2Ul",
+  "tags": []
+}
